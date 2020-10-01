@@ -540,7 +540,7 @@ class Game:
             #other piece(s) that can also see the same square
             other_players = []
             for player in self.players:
-                if player.symbol == piece.symbol and player.pos != piece.pos 
+                if player.symbol == piece.symbol and player.pos != piece.pos \
                     and player.on_board and self.l_pos in player.available_moves():
                     other_players.append(player)
             if other_players:
@@ -681,7 +681,7 @@ class Game:
         self.update_en_passant_target_square(piece.symbol, piece.file)
         self.update_halfmove_clock(piece.symbol)
 
-        self.the_move = self.f_pos[1] + str(self.f_pos[0]) + 
+        self.the_move = self.f_pos[1] + str(self.f_pos[0]) + \
                         self.l_pos[1] + str(self.l_pos[0])
 
         self.move_dict[self.fullmove][self.turn] = self.the_move
@@ -795,8 +795,8 @@ class King(Piece):
         for dir_r, dir_f in iter(queen_dir):
             temp_r, temp_f = self.rank + dir_r, chr(ord(self.file) + dir_f)
             try:
-                if not board.loc[temp_r, temp_f] or
-                    or board.loc[temp_r, temp_f].color != self.color:
+                if not board.loc[temp_r, temp_f] or \
+                    board.loc[temp_r, temp_f].color != self.color:
                     yield (temp_r, temp_f)
             except KeyError or AttributeError:
                 continue
@@ -804,7 +804,7 @@ class King(Piece):
 class Pawn(Piece):
     def available_moves(self):
         self.direction = [-1, 1][self.symbol.isupper()]
-        if self.rank == 2 and self.color == WHITE or
+        if self.rank == 2 and self.color == WHITE or \
             self.rank == 6 or self.color == BLACK:
             temp_f = self.file
             temp_r = self.rank + 2 * self.direction
