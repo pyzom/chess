@@ -8,11 +8,6 @@ from copy import deepcopy
 from itertools import chain
 from draw_chess_board import *
 
-def alternate_turn():
-    while 1:
-        yield BLACK, WHITE
-        yield WHITE, BLACK
-
 class Game:
     alternator = alternate_turn()
     def __init__(self):
@@ -42,7 +37,7 @@ class Game:
         self.captured_dict = {}
         self.engine = False
         self.machine = False
-        self.engine_level = stockfish.set_skill_level(5)
+        self.engine_level = stockfish.set_skill_level(20)
         self.f_pos = None
         #self.l_pos = None
         self.the_move = None
@@ -55,6 +50,7 @@ class Game:
         king_position = self.king_pos(self.opponent)
         if self.square_safe(self.turn, king_position):
             return False
+        print('CHECK')
         return True
 
     def is_mate(self):
@@ -63,7 +59,7 @@ class Game:
             if player.color == self.turn and player.on_board:
                 if player.symbol.upper() == 'P':
                     scanned_list = chain(player.available_captures(),
-                                         player.available_moves())
+                            player.available_moves())
                 else:
                     scanned_list = player.available_moves()
 
@@ -96,22 +92,22 @@ class Game:
                     board.loc[i] = temp
                     if temp:
                         temp.on_board = True
+        print('mate')
         return True
 
     def square_safe(self, turn, pos):
         for player in self.players:
-            if player.color == turn and player.on_board:
-                if (player.symbol.upper() == 'P' and
-                    pos in player.can_capture()):
+            if player.on_board and player.color == turn:
+                if (player.symbol.upper() == 'P' and pos in player.can_capture()):
                     return False
                 elif (player.symbol.upper() != 'P' and
-                      pos in player.available_moves()):
+                        pos in player.available_moves()):
                     return False
         return True
 
     def draw_current_board(self, surface, players, start):
         for player in players:
-            if player.pos != start and player.on_board:
+            if player.on_board and player.pos != start:
                 player.update(surface)
 
     def main(self, surface):
@@ -135,7 +131,7 @@ class Game:
             for choice in choices:
                 choice.update(surface)
         pg.display.update()
-        MyClock.tick(60)
+        clock.tick(60)
 
     def game_event_loop(self, surface):
         global choices
@@ -146,21 +142,21 @@ class Game:
             if event.type == pg.MOUSEBUTTONDOWN and not in_real_grid(event.pos):
                 for i in self.move_rect_dict:
                     if self.move_rect_dict[i].collidepoint(event.pos):
-                        self.mode = 'moves'
                         self.clicked = self.move_rect_dict[i]
                         print(self.SAN_list[i])
-                        print(board_dict[(i+2)/2][[WHITE, BLACK][i%2 == 0]])
+                        print(board_dict[1][WHITE])
                         self.move_rect_loop(surface, i)
-                        if self.clicked is self.move_rect_dict[len(self.move_rect_dict)-1]:
-                            self.mode = 'game'
-                        else:
+                        if self.clicked is not self.move_rect_dict[len(self.move_rect_dict)-1]:
                             self.mode = 'moves'
+                        else:
+                            self.mode = 'game'
+                print(self.mode, self.clicked)
 
             elif event.type == pg.MOUSEBUTTONDOWN:
                 if self.promote_pawn:
                     for choice in choices:
+                        print(choice)
                         if choice.rect.collidepoint(event.pos):
-                            print(event.pos)
                             self.promotion_choice = choice
                             print(self.promotion_choice, 'SPC')
                 else:
@@ -174,17 +170,20 @@ class Game:
                                 print('nana')
             elif event.type == pg.MOUSEBUTTONUP:
                 if self.promote_pawn:
-                    if self.promotion_choice != None:
+                    try:
                         self.pawn_promotion()
-                    self.promote_pawn = False
+                        self.promote_pawn = False
+                    except AttributeError:
+                        print('None is clicked - Pawn promotion')
+                        self.promote_pawn = True
                 else:
                     for player in self.players:
                         if (player.rect.collidepoint(event.pos) and
-                            player.pos == self.f_pos):
+                                player.pos == self.f_pos):
                             try:
                                 self.l_pos = SCREEN_TO_BOARD[position(event.pos)]
                                 print('l_pos = ', self.l_pos)
-                                if self.move():
+                                if self.move() and self.mode == 'game':
                                     self.clicked = None
 
                                     player.rect.center = BOARD_TO_SCREEN[player.rank, player.file]
@@ -205,25 +204,13 @@ class Game:
                             except KeyError or AttributeError:
                                 player.rect.center = BOARD_TO_SCREEN[self.f_pos]
                         player.click = False
-            elif event.type == pg.QUIT:
+            elif event.type == pg.QUIT or (
+                    event.type == pg.KEYDOWN and event.key == pg.K_q):
                 pg.quit()
                 sys.exit()
 
-
-    def pawn_promotion(self): 
-        choice = self.promotion_choice
-        choice.pos = self.l_pos
-        choice.rank, choice.file = choice.pos
-        choice.image = pg.image.load(f'pieces90px/{choice}.png')
-        for player in self.players:
-            if player.pos == self.l_pos:
-                index_ = self.players.index(player)
-                choice.rect.center = player.rect.center
-        del self.players[index_]
-        self.players.insert(index_, choice)
-        board.loc[self.l_pos] = choice
-
     def move_rect_loop(self,surface, i):
+        # Get move number and turn.
         try:
             move_no = int(self.SAN_list[i][0])
             turn = WHITE
@@ -231,14 +218,21 @@ class Game:
             move_no = int(self.SAN_list[i-1][0])
             turn = BLACK
 
+        # Get board state.
         ex_board = board_dict[move_no][turn]
+        # Get start and end position.
         ex_move = self.move_dict[move_no][turn]
+        # Get current captured pieces
         ex_captured_list = self.captured_dict[move_no][turn]
+        # Start and end positions for the animation
         start = int(ex_move[:2][1]), ex_move[:2][0]
         end = int(ex_move[2:][1]), ex_move[2:][0]
         (x1, y1), (x, y) = BOARD_TO_SCREEN[end], BOARD_TO_SCREEN[start]
+        # name the piece at the start position
         piece = ex_board.loc[start]
+        # name the piece (if there is any) at the end position
         defender = ex_board.loc[end]
+        # move the already captured pieces to the captured piece lounge
         self.move_captured_pieces(ex_captured_list)
         #print(ex_captured_list)
         #print(start, end, piece, defender)
@@ -246,13 +240,14 @@ class Game:
         #print(ex_board)
         for rank in ranks:
             for file_ in files:
-                if ex_board.loc[rank, file_] and not defender:
+                if ex_board.loc[rank, file_]:
                     ex_board.loc[rank, file_].on_board = True
+                    ex_player = ex_board.loc[rank, file_]
 
-                    ex_board.loc[rank, file_].image = \
-                        pg.image.load(f'pieces90px/{ex_board.loc[rank, file_].symbol}.png')
-                    ex_board.loc[rank, file_].rect.center = (file_dict[file_], rank_dict[rank])
-                    ex_players.append(ex_board.loc[rank, file_])
+                    ex_player.image = pg.image.load(
+                            f'pieces90px/{ex_player.symbol}.png')
+                    ex_player.rect.center = (file_dict[file_], rank_dict[rank])
+                    ex_players.append(ex_player)
 
         speed = (x1 - x) // 10, (y1 - y) // 10
         while piece.rect.center != (x1, y1):
@@ -264,11 +259,11 @@ class Game:
             piece.rect = piece.rect.move(speed)
             piece.update(surface)
             pg.display.update()
-            MyClock.tick(100)
+            clock.tick(100)
 
         if defender:
-            defender.rect.center = 900, 800
-            defender = 0
+            self.move_captured_pieces([defender])
+
 
     def move_captured_pieces(self, captured_pieces):
         if captured_pieces:
@@ -276,15 +271,15 @@ class Game:
                 y = 815
                 if captured.color == WHITE:
                     y = 870
-                if captured == 'P':
+                if captured.symbol.upper() == 'P':
                     x = 925
-                if captured == 'N':
+                if captured.symbol.upper() == 'N':
                     x = 970
-                if captured == 'B':
+                if captured.symbol.upper() == 'B':
                     x = 1015
-                if captured == 'R':
+                if captured.symbol.upper() == 'R':
                     x = 1055
-                if captured == 'Q':
+                if captured.symbol.upper() == 'Q':
                     x = 1100
 
                 captured.image = pg.image.load(f'pieces50px/{captured.symbol}.png')
@@ -296,16 +291,19 @@ class Game:
         piece = board.loc[self.f_pos]
         defender = board.loc[self.l_pos]
 
-        if piece and self.is_valid() and self.mode == 'game':
+        if piece and self.is_valid():
+            # add current board to board dict
             if self.turn == WHITE:
                 board_dict[self.fullmove] = {}
                 board_dict[self.fullmove][self.turn] = deepcopy(board)
             else:
                 board_dict[self.fullmove][self.turn] = deepcopy(board)
 
+            # check if it's a pawn promotion
             if piece.symbol.upper() == 'P' and piece.rank == [2, 7][self.turn == WHITE]:
                 self.promote_pawn = True
 
+            # check if it's en passant 
             if self.en_passant:
                 ep_pos = (self.f_pos[0], self.l_pos[1])
                 self.captured_list.append(board.loc[ep_pos])
@@ -313,6 +311,9 @@ class Game:
                 self.capture = True
                 self.move_captured_piece(-1)
                 self.en_passant = False
+
+            # check if there is capture and if there is move captured piece to
+            # the captured piece lounge
             if defender:
                 self.captured_list.append(defender)
                 self.capture = True
@@ -330,7 +331,7 @@ class Game:
             self.update_en_passant_target_square(piece.symbol, piece.file)
             self.update_halfmove_clock(piece.symbol)
             self.the_move = (self.f_pos[1] + str(self.f_pos[0]) +
-                             self.l_pos[1] + str(self.l_pos[0]))
+                    self.l_pos[1] + str(self.l_pos[0]))
 
             if self.turn == WHITE:
                 self.move_dict[self.fullmove] = {}
@@ -390,11 +391,9 @@ class Game:
                 (piece.rank + piece.direction == self.ep_square[0]) and \
                 (abs(ord(piece.file) - ord(self.ep_square[1])) == 1):
                 self.en_passant = True
-
                 return True
         else:
-            if self.l_pos in piece.available_moves() and \
-                self.is_king_safe():
+            if self.l_pos in piece.available_moves() and self.is_king_safe():
                 return True
         print('Move is not valid')
         return False
@@ -414,19 +413,22 @@ class Game:
             diff = (f1 - f) // abs(f1 - f)
         except ZeroDivisionError:
             return False
-        if self.f_pos[1] != 'e' and (self.l_pos[1] != 'c' or self.l_pos[1] != 'g'):
+        if self.f_pos[1] != 'e' and (
+                                self.l_pos[1] != 'c' or self.l_pos[1] != 'g'):
             return False
 
-        if self.l_pos[1] == 'c' and \
-            ((piece.symbol.isupper() and 'Q' not in self.castling_rights) or \
-             (piece.symbol.islower() and 'q' not in self.castling_rights)):
-                print('queen side sikinti')
-                return False
-        if self.l_pos[1] == 'g' and \
-            ((piece.symbol.isupper() and 'K' not in self.castling_rights) or \
-             (piece.symbol.islower() and 'k' not in self.castling_rights)):
-                print('king side sikinti')
-                return False
+        if self.l_pos[1] == 'c' and ( 
+            (piece.symbol.isupper() and 'Q' not in self.castling_rights) 
+            or 
+            (piece.symbol.islower() and 'q' not in self.castling_rights)):
+            print('queen side sikinti')
+            return False
+        if self.l_pos[1] == 'g' and ( 
+            (piece.symbol.isupper() and 'K' not in self.castling_rights) 
+            or 
+            (piece.symbol.islower() and 'k' not in self.castling_rights)):
+            print('king side sikinti')
+            return False
 
         while 'a' <= chr(f) <= 'h':
             if self.square_safe(self.opponent, (self.f_pos[0], chr(f))):
@@ -438,23 +440,34 @@ class Game:
         return True
 
     def castle(self):
+        """
+        Moves the castled rook's rect and manages position information.
+        Provides info for updating the castling rights.
+        """
         global BOARD_TO_SCREEN, SCREEN_TO_BOARD
         if self.l_pos[1] == 'c':
             board.loc[self.l_pos[0], 'd'] = board.loc[self.l_pos[0], 'a']
-            board.loc[self.l_pos[0], 'd'].pos = (self.l_pos[0], 'd')
-            pos = board.loc[self.l_pos[0], 'd'].pos
-            board.loc[self.l_pos[0], 'd'].rect.center = BOARD_TO_SCREEN[pos]
+            castled_rook = board.loc[self.l_pos[0], 'd'] 
+            castled_rook.pos = (self.l_pos[0], 'd')
+            castled_rook.rank, castled_rook.file = castled_rook.pos
+            pos = castled_rook.pos
+            castled_rook.rect.center = BOARD_TO_SCREEN[pos]
             board.loc[self.l_pos[0], 'a'] = 0
             self.castled_qs = True
         if self.l_pos[1] == 'g':
             board.loc[self.l_pos[0], 'f'] = board.loc[self.l_pos[0], 'h']
-            board.loc[self.l_pos[0], 'f'].pos = (self.l_pos[0], 'f')
-            pos = board.loc[self.l_pos[0], 'f'].pos
-            board.loc[self.l_pos[0], 'f'].rect.center = BOARD_TO_SCREEN[pos]
+            castled_rook = board.loc[self.l_pos[0], 'f'] 
+            castled_rook.pos = (self.l_pos[0], 'f')
+            castled_rook.rank, castled_rook.file = castled_rook.pos
+            pos = castled_rook.pos
+            castled_rook.rect.center = BOARD_TO_SCREEN[pos]
             board.loc[self.l_pos[0], 'h'] = 0
             self.castled_ks = True
 
     def update_castling_rights(self, symbol):
+        """
+        Updates castling rights, when a castle happens.
+        """
         if symbol == 'K' or (symbol == 'R' and self.f_pos[1] == 'a'):
             self.castling_rights = self.castling_rights.replace('Q', '')
         if symbol == 'K' or (symbol == 'R' and self.f_pos[1] == 'h'):
@@ -527,9 +540,9 @@ class Game:
             #other piece(s) that can also see the same square
             other_players = []
             for player in self.players:
-                if player.symbol == piece.symbol and player.pos != piece.pos \
+                if player.symbol == piece.symbol and player.pos != piece.pos 
                     and player.on_board and self.l_pos in player.available_moves():
-                        other_players.append(player)
+                    other_players.append(player)
             if other_players:
                 for player in other_players:
                     if piece.file != player.file:
@@ -596,10 +609,10 @@ class Game:
 
 
     def move_screen(self, surface):
-        font = pg.font.SysFont('gentiumbookbasic', 20)
+        font = pg.font.SysFont('gentiumbookbasic', 30)
         font2 = pg.font.SysFont('gentiumbookbasic', 15)
         x, y = 886, 8
-        self.move_rect_color = (200, 220, 220)
+        self.move_rect_color = (255, 255, 255)
         self.after_click = (dark_square)
         if len(self.SAN_list) > 0:
             for i, san in enumerate(self.SAN_list):
@@ -626,8 +639,6 @@ class Game:
             w_pawn_no_rect = w_pawn_no.get_rect(center=(902, 825))
             surface.blit(w_pawn_no, w_pawn_no_rect)
 
-
-
     def engine_main_loop(self, surface):
         engine_move = stockfish.get_best_move()
         start, end = engine_move[:2], engine_move[2:]
@@ -646,12 +657,14 @@ class Game:
             piece.rect = piece.rect.move(speed)
             piece.update(surface)
             pg.display.update()
-            MyClock.tick(40)
+            clock.tick(40)
 
         if self.en_passant:
             ep_pos = (self.f_pos[0], self.l_pos[1])
-            self.captured_list.append(board.loc[ep_pos])
+            ep_defender = board.loc[ep_pos]
+            self.captured_list.append(ep_defender)
             self.capture = True
+            ep_defender.on_board = False
             self.move_captured_piece(-1)
             self.en_passant = False
 
@@ -659,6 +672,7 @@ class Game:
             self.captured_list.append(defender)
             self.capture = True
             self.move_captured_piece(-1)
+            defender.on_board = False
 
         self.get_algebraic_notation()
         board.loc[self.l_pos] = piece
@@ -667,8 +681,8 @@ class Game:
         self.update_en_passant_target_square(piece.symbol, piece.file)
         self.update_halfmove_clock(piece.symbol)
 
-        self.the_move = self.f_pos[1] + str(self.f_pos[0]) + \
-            self.l_pos[1] + str(self.l_pos[0])
+        self.the_move = self.f_pos[1] + str(self.f_pos[0]) + 
+                        self.l_pos[1] + str(self.l_pos[0])
 
         self.move_dict[self.fullmove][self.turn] = self.the_move
 
@@ -679,6 +693,19 @@ class Game:
         stockfish.set_fen_position(self.FEN)
         if self.turn == WHITE:
             self.fullmove += 1
+
+    def pawn_promotion(self):
+        for player in self.players:
+            if player.pos == self.l_pos:
+                _ind = self.players.index(player)
+                del self.players[_ind]
+        pc = self.promotion_choice
+        pc.image = pg.image.load(self.promotion_choice.image_path)
+        pc.pos = self.l_pos
+        pc.rank, pc.file = self.l_pos
+        pc.rect.center = (file_dict[pc.file], rank_dict[pc.rank])
+        self.players.append(pc)
+        board.loc[self.l_pos] = pc
 
 class Piece:
     def __init__(self, symbol, pos):
@@ -710,9 +737,8 @@ class Piece:
     #def pawn_promotion(self, choice):
     #    print(choice, 'HCOICE')
     #    #self.pos = self.rank, self.file = pos
+    #    self.image = pg.image.load('pieces90px/{choice.__repr__}.png')
 
-    #    self.image = pg.image.load(f'pieces90px/{choice}.png')
-    #    self.symbol = choice.symbol
 
 
     #find all available locations for rook, bishop and queen
@@ -735,6 +761,7 @@ class Piece:
                     temp_r += dir_r
                 except KeyError:
                     break
+        #return pos_list
 
 class Rook(Piece):
     def available_moves(self):
@@ -742,14 +769,17 @@ class Rook(Piece):
 
 class Knight(Piece):
     def available_moves(self):
+        #pos_list = []
         for dir_r, dir_f in iter(knight_dir):
             temp_r, temp_f = self.rank + dir_r, chr(ord(self.file) + dir_f)
             try:
                 if not board.loc[temp_r, temp_f] or \
                     board.loc[temp_r, temp_f].color != self.color:
                     yield (temp_r, temp_f)
+                    #pos_list.append((temp_r, temp_f))
             except KeyError or AttributeError:
                 continue
+        #return pos_list
 
 class Bishop(Piece):
     def available_moves(self):
@@ -761,12 +791,12 @@ class Queen(Piece):
 
 class King(Piece):
     def available_moves(self):
+        #pos_list = []
         for dir_r, dir_f in iter(queen_dir):
             temp_r, temp_f = self.rank + dir_r, chr(ord(self.file) + dir_f)
             try:
-                if not board.loc[temp_r, temp_f] \
-                or board.loc[temp_r, temp_f].color != self.color:
-                    #pos_list.append((temp_r, temp_f))
+                if not board.loc[temp_r, temp_f] or
+                    or board.loc[temp_r, temp_f].color != self.color:
                     yield (temp_r, temp_f)
             except KeyError or AttributeError:
                 continue
@@ -774,15 +804,10 @@ class King(Piece):
 class Pawn(Piece):
     def available_moves(self):
         self.direction = [-1, 1][self.symbol.isupper()]
-        # if self.symbol.isupper():
-        #     self.direction = 1
-        # else:
-        #     self.direction = -1
-        if self.rank == 2 and self.color == WHITE or \
-            self.rank == 7 and self.color == BLACK:
+        if self.rank == 2 and self.color == WHITE or
+            self.rank == 6 or self.color == BLACK:
             temp_f = self.file
             temp_r = self.rank + 2 * self.direction
-
             if board.loc[temp_r, temp_f] == 0:
                 yield (temp_r, temp_f)
 
@@ -812,33 +837,33 @@ class Pawn(Piece):
             self.direction = 1
         else:
             self.direction = -1
-        if 2 <= self.rank <= 7 and self.on_board:
+        if self.on_board and 2 <= self.rank <= 7:
             for i in [-1, 1]:
                 temp_r, temp_f = self.rank + self.direction, chr(ord(self.file) + i)
                 if 1 <= temp_r <= 8 and 'a' <= temp_f <= 'h':
                     yield (temp_r, temp_f)
 
 def place_pieces():
-        pieces = {'a': Rook, 'b': Knight, 'c': Bishop, 'd': Queen, \
-                  'e': King, 'f': Bishop, 'g': Knight, 'h': Rook}
-        for rank in iter(ranks):
-            for file_ in iter(files):
-                if rank == 1:
-                    symbol = symbols[pieces[file_]].upper()
-                    board.loc[rank, file_] = pieces[file_](symbol, (rank, file_))
-                if rank == 8:
-                    symbol = symbols[pieces[file_]]
-                    board.loc[rank, file_] = pieces[file_](symbol, (rank, file_))
-                if rank == 2:
-                    symbol = symbols[Pawn].upper()
-                    board.loc[rank, file_] = Pawn(symbol, (rank, file_))
-                if rank == 7:
-                    symbol = symbols[Pawn]
-                    board.loc[rank, file_] = Pawn(symbol, (rank, file_))
+    pieces = {'a': Rook, 'b': Knight, 'c': Bishop, 'd': Queen, \
+            'e': King, 'f': Bishop, 'g': Knight, 'h': Rook}
+    for rank in iter(ranks):
+        for file_ in iter(files):
+            if rank == 1:
+                symbol = symbols[pieces[file_]].upper()
+                board.loc[rank, file_] = pieces[file_](symbol, (rank, file_))
+            if rank == 8:
+                symbol = symbols[pieces[file_]]
+                board.loc[rank, file_] = pieces[file_](symbol, (rank, file_))
+            if rank == 2:
+                symbol = symbols[Pawn].upper()
+                board.loc[rank, file_] = Pawn(symbol, (rank, file_))
+            if rank == 7:
+                symbol = symbols[Pawn]
+                board.loc[rank, file_] = Pawn(symbol, (rank, file_))
 
-                if board.loc[rank, file_]:
-                    board.loc[rank, file_].rect.center = (file_dict[file_], rank_dict[rank])
-                    yield board.loc[rank, file_]
+            if board.loc[rank, file_]:
+                board.loc[rank, file_].rect.center = (file_dict[file_], rank_dict[rank])
+                yield board.loc[rank, file_]
 
 def draw_promote_choices(surface, pos, turn):
     choices = ['qQ', 'rR', 'nN', 'bB', Queen, Rook, Knight, Bishop]
@@ -856,112 +881,54 @@ def draw_promote_choices(surface, pos, turn):
         choices[i+4].rect.topleft = (x+5, y+8)
         x += 80
     x-=320
-    pg.draw.lines(surface, (20, 20, 20), True, ((x, y), (x + 4*szbtwn, y), \
-                                                (x + 4*szbtwn, y + szbtwn), \
+    pg.draw.lines(surface, (20, 20, 20), True, ((x, y), (x + 4*szbtwn, y), 
+                                                (x + 4*szbtwn, y + szbtwn), 
                                                     (x, y + szbtwn)), 4 )
     return choices[4:]
 
 
-def position(pos):
-    pos = list(pos)
-    for i,ind in enumerate(pos):
-        if ind <= 100 * (ind // 100) + 40:
-            pos[i] = 100 * (pos[i] // 100) - 10
-        else:
-            pos[i] = 100 * (pos[i] // 100) + 90
 
-    return tuple(pos)
 
-def in_real_grid(pos):
-        if 40 <= pos[0] <= 840 and 40 <= pos[1] <= 840:
-            return True
-        return False
 
-light_square = (232, 235, 239)
-dark_square = (125, 135, 150)
-BLACK = 'black'
-WHITE = 'white'
 
-def draw_frame(Surface):
-    pg.draw.polygon(Surface, (31,31,31), [(0,0), (40,40), (840,40), (840,840), (880,880),(880,0)])
-    pg.draw.polygon(Surface, (31,31,31), [(0,0), (40,40), (40,840), (840,840), (880,880),(0,880)])
-    font = pg.font.SysFont('gentiumbookbasic', 30)
-    letters = iter('ABCDEFGH')
-    numbers = iter('12345678')
-    # if turn == 1:
-    #     letters = list(reversed(letters))
-    #     numbers = list(reversed(numbers))
-    for i, number in enumerate(numbers):
-        x, y = 790, 18
-        text = font.render(number, True, light_square)
-        text_rect = text.get_rect(center=(y,x-(i)*100))
-        Surface.blit(text, text_rect)
 
-    for i,letter in enumerate(letters):
-        x, y = 90, 20
-        text = font.render(letter, True, light_square)
-        text_rect = text.get_rect(center=(x+i*100,y))
-        Surface.blit(text, text_rect)
-
-def draw_squares(Surface):
-    x, y = 40, 40
-    szbtwn = 100
-    dark = False
-    for i in iter((0, 2, 4, 6, 1, 3, 5, 7)):
-        if i == 1:
-            dark = True
-        for j in range(8):
-            rect = pg.Rect(x+j*szbtwn, y+i*szbtwn, szbtwn, szbtwn)
-            if dark == True:
-                pg.draw.rect(Surface, dark_square, rect)
-                dark = False
-            else:
-                pg.draw.rect(Surface, light_square, rect)
-                dark = True
-
-def draw_move_screen(Surface, clicked_move_rect):
-    rect = pg.Rect(881, 0, 232, 749)
-    pg.draw.rect(Surface, (31, 37, 37), rect)
-    rect = pg.Rect(881, 749, 232, 132)
-    pg.draw.rect(Surface, (70, 70, 70), rect)
-    pg.draw.lines(Surface, light_square, True, ((880, 0), (880, 880), (1112, 880), (1112, 0)), 1)
-    pg.draw.lines(Surface, light_square, True, ((882, 2), (882, 748), (1110, 748), (1110, 2)), 1)
-    pg.draw.lines(Surface, light_square, True, ((882, 878), (882, 750), (1110, 750), (1110, 878)), 1)
-    if clicked_move_rect:
-        rect = pg.Rect(clicked_move_rect)
-        pg.draw.rect(Surface, (70, 70, 70), rect)
-
- 
 
 
 if __name__ == "__main__":
-    os.environ['SDL_VIDEO_CENTERED'] = '1'
+    # Set window position
+    os.environ['SDL_VIDEO_WINDOW_POS'] = '800,25'
+    # Initialize pygame
     pg.init()
-    MyClock = pg.time.Clock()
+
+    # Set pygame window caption
     pg.display.set_caption('Chess')
-    light_square = (232, 235, 239)
-    dark_square = (125, 135, 150)
-    Screen = pg.display.set_mode((1113, 881), pg.RESIZABLE)
+    # Set clock
+    clock = pg.time.Clock()
+    # Set display mode
+    screen = pg.display.set_mode((1113, 881))
+
+    # Define colors of sides, it's used while naming turns and pieces
     BLACK = 'black'
     WHITE = 'white'
-    MyClock = pg.time.Clock()
+
+    # Default initial board position in Forsyth-Edwards Notation (FEN) 
     initial_FEN_position = 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1'
 
-    # Directions for generating the available positions for bishops, rooks, queens,
-        #knights and kings (same as the queens' directions)
+    # Directions for generating the available moves for major pieces.
     diagonal_dir = [(1, 1), (1, -1), (-1, -1), (-1, 1)]
     cardinal_dir = [(1, 0), (-1, 0), (0, 1), (0, -1)]
     queen_dir = diagonal_dir + cardinal_dir
     knight_dir = [(2, 1), (2, -1), (-2, 1), (-2, -1), \
-                  (1, 2), (-1, 2), (1, -2), (-1, -2)]
+            (1, 2), (-1, 2), (1, -2), (-1, -2)]
 
+    # Board representation. Pandas dataFrame used for easy square naming 
     board = pd.DataFrame(np.zeros((8, 8), dtype=int),
-                         index=[8, 7, 6, 5, 4, 3, 2, 1],
-                         columns=['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h'])
+            index=[8, 7, 6, 5, 4, 3, 2, 1],
+            columns=['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h'])
     ranks = board.index
     files = board.columns
     symbols = {Rook: 'r', Knight: 'n', Bishop: 'b',
-               Queen: 'q', King: 'k', Pawn: 'p'}
+            Queen: 'q', King: 'k', Pawn: 'p'}
 
     real_positions = [90, 190, 290, 390, 490, 590, 690, 790]
     file_dict = dict(zip(files, real_positions))
@@ -975,9 +942,9 @@ if __name__ == "__main__":
             BOARD_TO_SCREEN[(rank, file_)] = (file_dict[file_], rank_dict[rank])
     board_dict = {}
     #engine
-    stockfish = Stockfish('/usr/bin/stockfish')
+    stockfish = Stockfish('stockfish')
 
 
     a = Game()
     while 1:
-        a.main(Screen)
+        a.main(screen)
