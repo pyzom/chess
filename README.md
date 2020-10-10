@@ -8,7 +8,7 @@ An application to play and study chess
 * Press p to engine on/off
 
 - todo
-Welcome page
-Load FEN position or moves
-Save position/FEN/moves
-Provide an empty board to set up desired position with mouse
++ Welcome page
++ Load FEN position or moves
++ Save position/FEN/moves
++ Provide an empty board to set up desired position with mouse
