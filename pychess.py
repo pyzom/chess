@@ -9,6 +9,7 @@ from itertools import chain
 from draw_chess_board import *
 
 class Game:
+
     alternator = alternate_turn()
     def __init__(self):
         # board representation in Forsyth-Edwards-Notation (FEN)
@@ -16,7 +17,7 @@ class Game:
         stockfish.set_fen_position(initial_FEN_position)
         self.position_dict = {1: initial_FEN_position}
 
-        self.players = list(place_pieces())
+        self.players = list(initial_setup_pieces())
         self.turn, self.opponent = WHITE, BLACK
 
         self.mode = 'game'
@@ -71,8 +72,7 @@ class Game:
                     board.loc[player.pos] = 0
                     board.loc[i] = player
 
-                    player.pos = i
-                    player.rank, player.file = i
+                    player.rank, player.file = player.pos = i
 
                     king_position = self.king_pos(self.turn)
                     if self.square_safe(self.opponent, king_position):
@@ -105,10 +105,6 @@ class Game:
                     return False
         return True
 
-    def draw_current_board(self, surface, players, start):
-        for player in players:
-            if player.on_board and player.pos != start:
-                player.update(surface)
 
     def main(self, surface):
         global choices
@@ -122,14 +118,15 @@ class Game:
         if self.engine:
             self.engine_main_loop(surface)
             self.engine = False
-        for player in self.players:
-            player.update(surface)
 
-        if self.promote_pawn:
-            choices = draw_promote_choices(surface, (8, 'e'), self.opponent)
-            #print(choices)
-            for choice in choices:
-                choice.update(surface)
+        if self.mode == 'game':
+            for player in self.players:
+                player.update(surface)
+        else:
+            for player in self.ex_players:
+                player.update(surface)
+
+
         pg.display.update()
         clock.tick(60)
 
@@ -143,80 +140,105 @@ class Game:
                 for i in self.move_rect_dict:
                     if self.move_rect_dict[i].collidepoint(event.pos):
                         self.clicked = self.move_rect_dict[i]
-                        print(self.SAN_list[i])
-                        print(board_dict[1][WHITE])
                         self.move_rect_loop(surface, i)
-                        if self.clicked is not self.move_rect_dict[len(self.move_rect_dict)-1]:
+                        if self.clicked is not \
+                                self.move_rect_dict[len(self.move_rect_dict)-1]:
                             self.mode = 'moves'
                         else:
                             self.mode = 'game'
-                print(self.mode, self.clicked)
-
-            elif event.type == pg.MOUSEBUTTONDOWN:
-                if self.promote_pawn:
-                    for choice in choices:
-                        print(choice)
-                        if choice.rect.collidepoint(event.pos):
-                            self.promotion_choice = choice
-                            print(self.promotion_choice, 'SPC')
-                else:
-                    for player in self.players:
-                        if player.rect.collidepoint(event.pos):
-                            try:
-                                self.f_pos = SCREEN_TO_BOARD[position(event.pos)]
-                                print('f_pos =', self.f_pos)
-                                player.click = True
-                            except KeyError or AttributeError:
-                                print('nana')
+                
+            elif event.type == pg.MOUSEBUTTONDOWN and self.mode == 'game':
+                for player in self.players:
+                    if player.rect.collidepoint(event.pos):
+                        try:
+                            self.f_pos = SCREEN_TO_BOARD[position(event.pos)]
+                            print('f_pos =', self.f_pos)
+                            player.click = True
+                        except KeyError or AttributeError:
+                            print('nana')
             elif event.type == pg.MOUSEBUTTONUP:
-                if self.promote_pawn:
-                    try:
-                        self.pawn_promotion()
-                        self.promote_pawn = False
-                    except AttributeError:
-                        print('None is clicked - Pawn promotion')
-                        self.promote_pawn = True
-                else:
-                    for player in self.players:
-                        if (player.rect.collidepoint(event.pos) and
-                                player.pos == self.f_pos):
-                            try:
-                                self.l_pos = SCREEN_TO_BOARD[position(event.pos)]
-                                print('l_pos = ', self.l_pos)
-                                if self.move() and self.mode == 'game':
-                                    self.clicked = None
+                for player in self.players:
+                    if (player.rect.collidepoint(event.pos) and
+                            player.pos == self.f_pos):
+                        try:
+                            self.l_pos = SCREEN_TO_BOARD[position(event.pos)]
+                            print('l_pos = ', self.l_pos)
+                            if self.move() and self.mode == 'game':
+                                self.clicked = None
 
-                                    player.rect.center = BOARD_TO_SCREEN[player.rank, player.file]
-                                    self.turn, self.opponent = next(self.alternator)
-                                    if self.check:
-                                        if self.is_mate():
-                                            self.SAN_list[-1] = self.SAN_list[-1].replace('+', '#')
-                                            print('MATE')
-                                    self.check = False
-                                    self.FEN = self.get_FEN_position()
-                                    stockfish.set_fen_position(self.FEN)
-                                    if self.turn == WHITE:
-                                        self.fullmove += 1
-                                    if self.machine:
-                                        self.engine = True
-                                else:
-                                    player.rect.center = BOARD_TO_SCREEN[self.f_pos]
-                            except KeyError or AttributeError:
+                                player.rect.center = BOARD_TO_SCREEN[player.rank, player.file]
+                                if self.promote_pawn:
+                                    player.click = False
+                                    self.promotion_loop(surface)
+                                    self.pawn_promotion()
+                                    if not self.check and self.is_check():
+                                        self.check = True
+                                        self.SAN_list[-1] += '+'
+                                self.turn, self.opponent = next(self.alternator)
+                                if self.check:
+                                    if self.is_mate():
+                                        self.SAN_list[-1] = self.SAN_list[-1].replace('+', '#')
+                                        print('MATE')
+                                self.check = False
+                                self.FEN = self.get_FEN_position()
+                                stockfish.set_fen_position(self.FEN)
+                                if self.turn == WHITE:
+                                    self.fullmove += 1
+                                if self.machine:
+                                    self.engine = True
+                                
+
+                            else:
                                 player.rect.center = BOARD_TO_SCREEN[self.f_pos]
-                        player.click = False
+                        except KeyError or AttributeError:
+                            player.rect.center = BOARD_TO_SCREEN[self.f_pos]
+                    player.click = False
             elif event.type == pg.QUIT or (
                     event.type == pg.KEYDOWN and event.key == pg.K_q):
                 pg.quit()
                 sys.exit()
+            elif event.type == pg.KEYDOWN and event.key == pg.K_p:
+                if self.machine == True:
+                    self.machine = False
+                else:
+                    self.machine = True
+                    self.engine = True
+    def promotion_loop(self, surface):
+        while self.promote_pawn:
+            draw_frame(surface)
+            draw_squares(surface)
+            draw_move_screen(surface, self.clicked)        
+            self.move_screen(surface)
+            for player in self.players:
+                player.update(surface)
+            choices = draw_promote_choices(surface, self.l_pos, self.turn)
+            for choice in choices:
+                choice.update(surface)
+            for event in pg.event.get():
+                if event.type == pg.MOUSEBUTTONDOWN:
+                    for choice in choices:
+                        if choice.rect.collidepoint(event.pos):
+                            self.promotion_choice = choice
+                elif event.type == pg.MOUSEBUTTONUP:
+                    if self.promotion_choice.rect.collidepoint(event.pos):
+                        self.promote_pawn = False
+            pg.display.update()
+            clock.tick(60)
+
 
     def move_rect_loop(self,surface, i):
         # Get move number and turn.
-        try:
-            move_no = int(self.SAN_list[i][0])
+        # if white's turn, the move number is in the clicked rect string 
+        # (part till '.') 
+        # if black's turn, the move number is in the one before 'clicked'
+        if '.' in self.SAN_list[i]:
+            mv_str = self.SAN_list[i]
             turn = WHITE
-        except ValueError:
-            move_no = int(self.SAN_list[i-1][0])
+        else:
+            mv_str= self.SAN_list[i-1]
             turn = BLACK
+
+        move_no = int(mv_str[:mv_str.index('.')])
 
         # Get board state.
         ex_board = board_dict[move_no][turn]
@@ -232,29 +254,14 @@ class Game:
         piece = ex_board.loc[start]
         # name the piece (if there is any) at the end position
         defender = ex_board.loc[end]
-        # move the already captured pieces to the captured piece lounge
-        self.move_captured_pieces(ex_captured_list)
-        #print(ex_captured_list)
-        #print(start, end, piece, defender)
-        ex_players = []
-        #print(ex_board)
-        for rank in ranks:
-            for file_ in files:
-                if ex_board.loc[rank, file_]:
-                    ex_board.loc[rank, file_].on_board = True
-                    ex_player = ex_board.loc[rank, file_]
-
-                    ex_player.image = pg.image.load(
-                            f'pieces90px/{ex_player.symbol}.png')
-                    ex_player.rect.center = (file_dict[file_], rank_dict[rank])
-                    ex_players.append(ex_player)
+        self.ex_players = list(get_players(ex_board)) + ex_captured_list
 
         speed = (x1 - x) // 10, (y1 - y) // 10
         while piece.rect.center != (x1, y1):
             draw_frame(surface)
             draw_squares(surface)
             draw_move_screen(surface, self.clicked)
-            self.draw_current_board(surface, ex_players, start)
+            place_other_pieces(surface, self.ex_players, start)
 
             piece.rect = piece.rect.move(speed)
             piece.update(surface)
@@ -262,30 +269,53 @@ class Game:
             clock.tick(100)
 
         if defender:
-            self.move_captured_pieces([defender])
+            self.move_captured_piece(-1, ex_captured_list)
 
 
-    def move_captured_pieces(self, captured_pieces):
-        if captured_pieces:
-            for captured in captured_pieces:
-                y = 815
-                if captured.color == WHITE:
-                    y = 870
-                if captured.symbol.upper() == 'P':
-                    x = 925
-                if captured.symbol.upper() == 'N':
-                    x = 970
-                if captured.symbol.upper() == 'B':
-                    x = 1015
-                if captured.symbol.upper() == 'R':
-                    x = 1055
-                if captured.symbol.upper() == 'Q':
-                    x = 1100
+        # check if en passant and remove the piece
+        if piece.symbol.upper() == 'P' and end[1] != start[1] and not defender:
+            ep = ex_board.loc[start[0], end[1]]
+            self.move_captured_piece(-1, ex_captured_list)
 
-                captured.image = pg.image.load(f'pieces50px/{captured.symbol}.png')
-                captured.rect.center = x, y
-                captured.on_board = False
-                #captured.pos = captured.rank = captured.file = None
+        for i, cap in enumerate(ex_captured_list):
+            self.move_captured_piece(i, ex_captured_list)
+        # if it's not the last move, draw next board on dict
+        try:
+            nxt_mv_no = [move_no + 1, move_no][turn == WHITE]
+            nxt_turn = [WHITE, BLACK][turn == WHITE]
+            nxt_board = board_dict[nxt_mv_no][nxt_turn]
+            print(piece.symbol.upper == 'P', end[1], start[1], defender)
+            self.ex_players = list(get_players(nxt_board)) + ex_captured_list
+
+        except KeyError:
+            pass
+
+
+    def move_captured_piece(self, ind_, captured_list):
+        if captured_list:
+            captured = captured_list[ind_]
+            y = 815
+            if captured.color == WHITE:
+                y = 870
+            if captured.symbol.upper() == 'P':
+                x = 925
+            if captured.symbol.upper() == 'N':
+                x = 970
+            if captured.symbol.upper() == 'B':
+                x = 1015
+            if captured.symbol.upper() == 'R':
+                x = 1055
+            if captured.symbol.upper() == 'Q':
+                x = 1100
+            if captured.symbol in [x.symbol for x in captured_list[:-1]] and \
+                captured.symbol.upper() != 'P':
+                x += 10
+            captured.image = pg.image.load(f'pieces50px/{captured.symbol}.png')
+            captured.rect.center = x, y
+            captured.pos = captured.rank = captured.file = None
+            captured.on_board = False
+
+
 
     def move(self):
         piece = board.loc[self.f_pos]
@@ -309,15 +339,16 @@ class Game:
                 self.captured_list.append(board.loc[ep_pos])
                 board.loc[ep_pos].on_board = False
                 self.capture = True
-                self.move_captured_piece(-1)
+                self.move_captured_piece(-1, self.captured_list)
                 self.en_passant = False
+                board.loc[ep_pos] = 0
 
             # check if there is capture and if there is move captured piece to
             # the captured piece lounge
             if defender:
                 self.captured_list.append(defender)
                 self.capture = True
-                self.move_captured_piece(-1)
+                self.move_captured_piece(-1, self.captured_list)
                 defender.on_board = False
 
             self.get_algebraic_notation()
@@ -344,30 +375,6 @@ class Game:
             return True
         return False
 
-    def move_captured_piece(self, i):
-        if self.captured_list:
-            captured = self.captured_list[i]
-            y = 815
-            if captured.color == WHITE:
-                y = 870
-            if captured.symbol.upper() == 'P':
-                x = 925
-            if captured.symbol.upper() == 'N':
-                x = 970
-            if captured.symbol.upper() == 'B':
-                x = 1015
-            if captured.symbol.upper() == 'R':
-                x = 1055
-            if captured.symbol.upper() == 'Q':
-                x = 1100
-            if captured.symbol in [x.symbol for x in self.captured_list[:-1]] and \
-                captured.symbol.upper() != 'P':
-                x += 10
-            captured.image = pg.image.load(f'pieces50px/{captured.symbol}.png')
-            captured.rect.center = x, y
-            captured.pos = captured.rank = captured.file = None
-
-
 
     def is_valid(self):
         piece = board.loc[self.f_pos]
@@ -387,7 +394,7 @@ class Game:
                 return True
             #if it's an en passant move
             if self.l_pos == self.ep_square and self.is_king_safe() and \
-                board.loc[self.f_pos[0], self.l_pos[1]].color != self.color and \
+                board.loc[self.f_pos[0], self.l_pos[1]].color != self.turn and \
                 (piece.rank + piece.direction == self.ep_square[0]) and \
                 (abs(ord(piece.file) - ord(self.ep_square[1])) == 1):
                 self.en_passant = True
@@ -399,8 +406,9 @@ class Game:
         return False
 
     def king_pos(self, turn):
-        king_position = [self.players[4].pos, self.players[-4].pos][turn == WHITE]
-        return king_position
+        for player in self.players:
+            if player.symbol == 'kK'[turn == WHITE]:
+                return player.pos
 
 
     def can_castle(self):
@@ -450,8 +458,7 @@ class Game:
             castled_rook = board.loc[self.l_pos[0], 'd'] 
             castled_rook.pos = (self.l_pos[0], 'd')
             castled_rook.rank, castled_rook.file = castled_rook.pos
-            pos = castled_rook.pos
-            castled_rook.rect.center = BOARD_TO_SCREEN[pos]
+            castled_rook.rect.center = BOARD_TO_SCREEN[castled_rook.pos]
             board.loc[self.l_pos[0], 'a'] = 0
             self.castled_qs = True
         if self.l_pos[1] == 'g':
@@ -459,8 +466,7 @@ class Game:
             castled_rook = board.loc[self.l_pos[0], 'f'] 
             castled_rook.pos = (self.l_pos[0], 'f')
             castled_rook.rank, castled_rook.file = castled_rook.pos
-            pos = castled_rook.pos
-            castled_rook.rect.center = BOARD_TO_SCREEN[pos]
+            castled_rook.rect.center = BOARD_TO_SCREEN[castled_rook.pos]
             board.loc[self.l_pos[0], 'h'] = 0
             self.castled_ks = True
 
@@ -606,8 +612,6 @@ class Game:
         fen += str(self.fullmove)
         return fen
 
-
-
     def move_screen(self, surface):
         font = pg.font.SysFont('gentiumbookbasic', 30)
         font2 = pg.font.SysFont('gentiumbookbasic', 15)
@@ -640,7 +644,16 @@ class Game:
             surface.blit(w_pawn_no, w_pawn_no_rect)
 
     def engine_main_loop(self, surface):
+        global choices
+
+        if self.turn == WHITE:
+            board_dict[self.fullmove] = {}
+            board_dict[self.fullmove][self.turn] = deepcopy(board)
+        else:
+            board_dict[self.fullmove][self.turn] = deepcopy(board)
+
         engine_move = stockfish.get_best_move()
+        print(engine_move)
         start, end = engine_move[:2], engine_move[2:]
         self.f_pos = int(start[1]), start[0]
         self.l_pos = int(end[1]), end[0]
@@ -652,31 +665,56 @@ class Game:
             draw_frame(surface)
             draw_squares(surface)
             draw_move_screen(surface, self.clicked)
-            self.draw_current_board(surface, self.players, self.f_pos)
+            place_other_pieces(surface, self.players, self.f_pos)
 
             piece.rect = piece.rect.move(speed)
             piece.update(surface)
             pg.display.update()
             clock.tick(40)
 
-        if self.en_passant:
+        # check if it is en passant
+        if piece.symbol.upper() == 'P' and self.f_pos[1] != self.l_pos[1] and \
+                not defender:
             ep_pos = (self.f_pos[0], self.l_pos[1])
             ep_defender = board.loc[ep_pos]
             self.captured_list.append(ep_defender)
             self.capture = True
-            ep_defender.on_board = False
-            self.move_captured_piece(-1)
-            self.en_passant = False
+            # ep_defender.on_board = False
+            self.move_captured_piece(-1, self.captured_list)
+            # self.en_passant = False
+            board.loc[ep_pos] = 0
 
         if defender:
             self.captured_list.append(defender)
             self.capture = True
-            self.move_captured_piece(-1)
+            self.move_captured_piece(-1, self.captured_list)
             defender.on_board = False
+
+        if piece.symbol.upper() == 'K' and\
+                        abs(ord(start[0]) - ord(end[0])) == 2:
+            self.castle()
+
 
         self.get_algebraic_notation()
         board.loc[self.l_pos] = piece
         board.loc[self.f_pos] = 0
+
+        
+        if piece.symbol.upper() == 'P' and piece.rank == [2, 7][self.turn == WHITE]:
+            
+            choices = draw_promote_choices(surface, self.l_pos, self.turn)
+            for choice in choices:
+                choice.update(surface)
+            print(choices)
+            choice_dict = {'q': choices[0], 'r': choices[1], 'n': choices[2], 'b': choices[1]}
+            self.promotion_choice = choice_dict[engine_move[-1]]
+            self.pawn_promotion()
+            if not self.check and self.is_check():
+                self.check = True
+                self.SAN_list[-1] += '+'
+
+
+
         self.update_castling_rights(piece.symbol)
         self.update_en_passant_target_square(piece.symbol, piece.file)
         self.update_halfmove_clock(piece.symbol)
@@ -684,7 +722,15 @@ class Game:
         self.the_move = self.f_pos[1] + str(self.f_pos[0]) + \
                         self.l_pos[1] + str(self.l_pos[0])
 
-        self.move_dict[self.fullmove][self.turn] = self.the_move
+        # self.move_dict[self.fullmove][self.turn] = self.the_move
+        if self.turn == WHITE:
+            self.move_dict[self.fullmove] = {}
+            self.move_dict[self.fullmove][self.turn] = self.the_move
+            self.captured_dict[self.fullmove] = {}
+            self.captured_dict[self.fullmove][self.turn] = self.captured_list[:]
+        else:
+            self.move_dict[self.fullmove][self.turn] = self.the_move
+            self.captured_dict[self.fullmove][self.turn] = self.captured_list[:]
 
         piece.rank, piece.file = piece.pos = self.l_pos
 
@@ -695,16 +741,18 @@ class Game:
             self.fullmove += 1
 
     def pawn_promotion(self):
-        for player in self.players:
-            if player.pos == self.l_pos:
-                _ind = self.players.index(player)
-                del self.players[_ind]
+        # make new piece and give necessary attributes
         pc = self.promotion_choice
         pc.image = pg.image.load(self.promotion_choice.image_path)
         pc.pos = self.l_pos
         pc.rank, pc.file = self.l_pos
         pc.rect.center = (file_dict[pc.file], rank_dict[pc.rank])
+        # delete the pawn that is promoted
+        _ind = self.players.index(board.loc[self.l_pos])
+        del self.players[_ind]
+        # add new piece to the list 
         self.players.append(pc)
+        # put the new piece on board
         board.loc[self.l_pos] = pc
 
 class Piece:
@@ -718,11 +766,11 @@ class Piece:
         self.click = False
 
         self.image_path = 'pieces90px/' + self.symbol + '.png'
-        self.image = pg.image.load(self.image_path)#.convert_alpha()
-        #self.image = pg.transform.rotozoom(i, 0, 0.9)
+        self.image = pg.image.load(self.image_path)
         self.pos = pos
         self.rank, self.file = self.pos
         self.on_board = True
+        self.promotion = False
 
     def update(self, surface):
 
@@ -734,25 +782,16 @@ class Piece:
     def __repr__(self):
         return self.symbol
 
-    #def pawn_promotion(self, choice):
-    #    print(choice, 'HCOICE')
-    #    #self.pos = self.rank, self.file = pos
-    #    self.image = pg.image.load('pieces90px/{choice.__repr__}.png')
-
-
 
     #find all available locations for rook, bishop and queen
     def available_pos_list(self, directions):
-        #pos_list = []
         for dir_r, dir_f in iter(directions):
             temp_r, temp_f = self.rank + dir_r, chr(ord(self.file) + dir_f)
             while 1:
                 try:
                     if not board.loc[temp_r, temp_f]:
-                        #pos_list.append((temp_r, temp_f))
                         yield (temp_r, temp_f)
                     elif board.loc[temp_r, temp_f].color != self.color:
-                        #pos_list.append((temp_r, temp_f))
                         yield (temp_r, temp_f)
                         break
                     else:
@@ -761,7 +800,6 @@ class Piece:
                     temp_r += dir_r
                 except KeyError:
                     break
-        #return pos_list
 
 class Rook(Piece):
     def available_moves(self):
@@ -804,8 +842,8 @@ class King(Piece):
 class Pawn(Piece):
     def available_moves(self):
         self.direction = [-1, 1][self.symbol.isupper()]
-        if self.rank == 2 and self.color == WHITE or \
-            self.rank == 6 or self.color == BLACK:
+        if (self.rank == 2 and self.color == WHITE) or \
+            (self.rank == 7 and self.color == BLACK):
             temp_f = self.file
             temp_r = self.rank + 2 * self.direction
             if board.loc[temp_r, temp_f] == 0:
@@ -843,9 +881,7 @@ class Pawn(Piece):
                 if 1 <= temp_r <= 8 and 'a' <= temp_f <= 'h':
                     yield (temp_r, temp_f)
 
-def place_pieces():
-    pieces = {'a': Rook, 'b': Knight, 'c': Bishop, 'd': Queen, \
-            'e': King, 'f': Bishop, 'g': Knight, 'h': Rook}
+def initial_setup_pieces():
     for rank in iter(ranks):
         for file_ in iter(files):
             if rank == 1:
@@ -887,6 +923,17 @@ def draw_promote_choices(surface, pos, turn):
     return choices[4:]
 
 
+def get_players(ex_board):
+    for rank in ranks:
+        for file_ in files:
+            if ex_board.loc[rank, file_]:
+                ex_board.loc[rank, file_].on_board = True
+                ex_player = ex_board.loc[rank, file_]
+
+                ex_player.image = pg.image.load(
+                        f'pieces90px/{ex_player.symbol}.png')
+                ex_player.rect.center = (file_dict[file_], rank_dict[rank])
+                yield ex_player
 
 
 
@@ -944,6 +991,8 @@ if __name__ == "__main__":
     #engine
     stockfish = Stockfish('stockfish')
 
+    pieces = {'a': Rook, 'b': Knight, 'c': Bishop, 'd': Queen, \
+            'e': King, 'f': Bishop, 'g': Knight, 'h': Rook}
 
     a = Game()
     while 1:

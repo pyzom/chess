@@ -9,7 +9,7 @@ WHITE = 'white'
 light_square = (232, 235, 239)
 dark_square = (125, 135, 150)
 captured_section = (47, 79, 79) 
-frame_color = (35, 43, 43)
+frame_color = (28, 28, 28)
 
 def draw_frame(Surface):
     """
@@ -65,7 +65,8 @@ def draw_move_screen(Surface, clicked_move_rect):
     """
     Draws the background and the frame of the moves and the captured pieces 
     section.
-    When a 'move rect' is clicked, it highlights the move rect area.
+    It takes 'move rect' as argument, so when it is clicked, it highlights the 
+    move rect area.
     """
     # top right section (moves screen)
     rect = pg.Rect(881, 0, 232, 749)
@@ -84,6 +85,12 @@ def draw_move_screen(Surface, clicked_move_rect):
     if clicked_move_rect:
         rect = pg.Rect(clicked_move_rect)
         pg.draw.rect(Surface, captured_section, rect)
+
+
+def place_other_pieces(surface, players, start):
+    for player in players:
+        if player.pos != start:
+            player.update(surface)
 
 
 def position(pos):
@@ -113,4 +120,6 @@ def alternate_turn():
     while 1:
         yield BLACK, WHITE
         yield WHITE, BLACK
+
+
 
